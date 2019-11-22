@@ -154,7 +154,27 @@ type OverlayMsg struct {
 	ResponseTree *ResponseTree
 	// Deprecated: use ResponseTree to send the tree and the roster
 	TreeMarshal *TreeMarshal
+
+	// ELIASNEW
+	Rumor         *Rumor
+	RumorResponse *RumorResponse
 }
+
+type Rumor struct {
+	Id              uint32
+	From            TreeNodeID
+	CurrentTreeNode *TreeNode
+	Message         interface{}
+}
+
+type RumorResponse struct {
+	Id              uint32
+	From            TreeNodeID
+	CurrentTreeNode *TreeNode
+	AcknowledgedMap map[TreeNodeID]bool
+}
+
+//
 
 // RequestRoster is used to ask the parent for a given Roster
 type RequestRoster struct {

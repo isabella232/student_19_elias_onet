@@ -48,6 +48,11 @@ type Overlay struct {
 
 	pendingConfigs    map[TokenID]*GenericConfig
 	pendingConfigsMut sync.Mutex
+
+	// ELIASNEW
+	allReceivedRumors AllRumorsReceived
+	deliveredRumors   DeliveredRumors
+	//
 }
 
 // NewOverlay creates a new overlay-structure
@@ -60,6 +65,10 @@ func NewOverlay(c *Server) *Overlay {
 		protocolInstances:  make(map[TokenID]ProtocolInstance),
 		pendingTreeMarshal: make(map[RosterID][]*TreeMarshal),
 		pendingConfigs:     make(map[TokenID]*GenericConfig),
+		// ELIASNEW
+		allReceivedRumors: make(AllRumorsReceived),
+		deliveredRumors:   make(DeliveredRumors),
+		//
 	}
 	o.protoIO = newMessageProxyStore(c.suite, c, o)
 	// messages going to protocol instances
@@ -101,6 +110,12 @@ func (o *Overlay) Process(env *network.Envelope) {
 		o.handleRequestRoster(env.ServerIdentity, info.RequestRoster, io)
 	case info.Roster != nil:
 		o.handleSendRoster(env.ServerIdentity, info.Roster)
+	// ELIASNEW
+	case info.Rumor != nil:
+		o.handleRumor(env.ServerIdentity, info.Rumor, io)
+	case info.RumorResponse != nil:
+		o.handleRumorResponse(env.ServerIdentity, info.RumorResponse, io)
+	//
 	default:
 		typ := network.MessageType(inner)
 		protoMsg := &ProtocolMsg{
@@ -784,6 +799,160 @@ func (o *Overlay) RegisterProtocolInstance(pi ProtocolInstance) error {
 func (o *Overlay) RegisterMessageProxy(m MessageProxy) {
 	o.protoIO.RegisterMessageProxy(m)
 }
+
+// ELIASNEW
+type RumorReceived struct {
+	Rumor           Rumor
+	AcknowledgedMap map[TreeNodeID]bool
+	RosterSize      int
+}
+
+type AllRumorsReceived map[TreeNodeID][]RumorReceived
+type DeliveredRumors map[TreeNodeID][]Rumor
+
+// Start a rumor
+func (o *Overlay) StartRumor(from *Token, tree *Tree, msg network.Message, io MessageProxy, c *GenericConfig) (uint64, error) {
+
+	newRumorReceived := RumorReceived{
+		Rumor: Rumor{
+			Id:      uint32(len(o.deliveredRumors[from.TreeNodeID])) + 1,
+			From:    from.TreeNodeID,
+			Message: msg,
+		},
+		AcknowledgedMap: map[TreeNodeID]bool{
+			from.TreeNodeID: true,
+		},
+		RosterSize: len(tree.Roster.List),
+	}
+	o.allReceivedRumors[from.TreeNodeID] = append(o.allReceivedRumors[from.TreeNodeID], newRumorReceived)
+
+	allSentLen := uint64(0)
+	for _, childrenNode := range tree.Root.Children {
+		sentLen, err := o.server.Send(childrenNode.ServerIdentity, &OverlayMsg{
+			Rumor: &Rumor{
+				Id:              newRumorReceived.Rumor.Id,
+				From:            newRumorReceived.Rumor.From,
+				CurrentTreeNode: childrenNode,
+				Message:         newRumorReceived.Rumor.Message,
+			},
+		})
+		allSentLen = allSentLen + sentLen
+		if err != nil {
+			return allSentLen, xerrors.Errorf("sending: %v", err)
+		}
+	}
+
+	return allSentLen, nil
+}
+
+// Receive a rumor from a peer
+func (o *Overlay) handleRumor(si *network.ServerIdentity, rumor *Rumor, io MessageProxy) {
+	indexReceived := o.indexInReceived(rumor.From, rumor.Id)
+	indexDelivered := o.indexInDelivered(rumor.From, rumor.Id)
+	if indexReceived == -1 && indexDelivered == -1 {
+		o.allReceivedRumors[rumor.From] = append(o.allReceivedRumors[rumor.From], RumorReceived{
+			Rumor: Rumor{
+				Id:      rumor.Id,
+				From:    rumor.From,
+				Message: rumor.Message,
+			},
+			AcknowledgedMap: map[TreeNodeID]bool{
+				rumor.CurrentTreeNode.ID: true,
+			},
+		})
+		indexReceived = len(o.allReceivedRumors[rumor.From]) - 1
+	}
+	if indexDelivered != -1 {
+		return
+	}
+	if rumor.CurrentTreeNode.IsLeaf() {
+		messageToSend := &OverlayMsg{
+			RumorResponse: &RumorResponse{
+				Id:              rumor.Id,
+				From:            rumor.From,
+				CurrentTreeNode: rumor.CurrentTreeNode.Parent,
+				AcknowledgedMap: o.allReceivedRumors[rumor.From][indexReceived].AcknowledgedMap,
+			},
+		}
+		_, err := o.server.Send(si, messageToSend)
+		if err != nil {
+			log.Error("Couldn't send rumor response from leaf:", err)
+		}
+	} else {
+		for _, childrenNode := range rumor.CurrentTreeNode.Children {
+			_, err := o.server.Send(childrenNode.ServerIdentity, &OverlayMsg{
+				Rumor: &Rumor{
+					Id:              rumor.Id,
+					From:            rumor.From,
+					CurrentTreeNode: childrenNode,
+					Message:         rumor.Message,
+				},
+			})
+			if err != nil {
+				log.Error("Couldn't send rumor to children:", err)
+			}
+		}
+	}
+}
+
+func (o *Overlay) indexInReceived(nodeId TreeNodeID, id uint32) int {
+	for index, savedRumor := range o.allReceivedRumors[nodeId] {
+		if savedRumor.Rumor.Id == id {
+			return index
+		}
+	}
+	return -1
+}
+
+func (o *Overlay) indexInDelivered(nodeId TreeNodeID, id uint32) int {
+	for index, deliveredRumor := range o.deliveredRumors[nodeId] {
+		if deliveredRumor.Id == id {
+			return index
+		}
+	}
+	return -1
+}
+
+// Receive a rumor response from a peer
+func (o *Overlay) handleRumorResponse(si *network.ServerIdentity, rumorRes *RumorResponse, io MessageProxy) {
+	indexReceived := o.indexInReceived(rumorRes.From, rumorRes.Id)
+	indexDelivered := o.indexInDelivered(rumorRes.From, rumorRes.Id)
+	if indexReceived == -1 || indexDelivered != -1 {
+		return
+	}
+	for key := range rumorRes.AcknowledgedMap {
+		o.allReceivedRumors[rumorRes.From][indexReceived].AcknowledgedMap[key] = true
+	}
+	if rumorRes.CurrentTreeNode.IsRoot() {
+		if len(o.allReceivedRumors[rumorRes.From][indexReceived].AcknowledgedMap) == o.allReceivedRumors[rumorRes.From][indexReceived].RosterSize {
+			o.deliveredRumors[rumorRes.From] = append(o.deliveredRumors[rumorRes.From], Rumor{
+				Id:              rumorRes.Id,
+				From:            rumorRes.From,
+				CurrentTreeNode: nil,
+				Message:         o.allReceivedRumors[rumorRes.From][indexReceived].Rumor.Message,
+			})
+			o.allReceivedRumors[rumorRes.From] = append(o.allReceivedRumors[rumorRes.From][:indexReceived], o.allReceivedRumors[rumorRes.From][indexReceived+1:]...)
+
+			fmt.Println("DELIVERED SOMETHING")
+			fmt.Println(o.deliveredRumors)
+		}
+	} else {
+		messageToSend := &OverlayMsg{
+			RumorResponse: &RumorResponse{
+				Id:              rumorRes.Id,
+				From:            rumorRes.From,
+				CurrentTreeNode: rumorRes.CurrentTreeNode.Parent,
+				AcknowledgedMap: o.allReceivedRumors[rumorRes.From][indexReceived].AcknowledgedMap,
+			},
+		}
+		_, err := o.server.Send(si, messageToSend)
+		if err != nil {
+			log.Error("Couldn't send rumor response from leaf:", err)
+		}
+	}
+}
+
+//
 
 // pendingMsg is used to store messages destined for ProtocolInstances but when
 // the tree designated is not known to the Overlay. When the tree is sent to the
