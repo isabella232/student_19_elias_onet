@@ -490,3 +490,30 @@ func TestTokenId(t *testing.T) {
 		t.Fatal("OtherToken should modify copy")
 	}
 }
+
+func TestSendRumor(t *testing.T) {
+	local := NewLocalTest(tSuite)
+	hosts, _, tree := local.GenTree(3, false)
+	defer local.CloseAll()
+
+	h1 := hosts[0]
+	h1.overlay.treeStorage.Register(tree.ID)
+	h2 := hosts[1]
+	h2.AddTree(tree)
+	h3 := hosts[2]
+	h3.AddTree(tree)
+
+	proc := newOverlayProc()
+	h1.RegisterProcessor(proc, ResponseTreeMsgID)
+	message := &ConfigMsg{
+		Config: GenericConfig{
+			Data: make([]byte, 0),
+		},
+		Dest: TokenID{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8},
+	}
+
+	_, bits, _ := h1.Overlay().SendRumor(*tree.Roster, tree.Root.ServerIdentity, 2, message, time.Second*20)
+
+	require.NotEqual(t, 0, bits)
+	// TODO Fix test
+}

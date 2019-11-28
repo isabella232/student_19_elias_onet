@@ -174,32 +174,6 @@ func (n *TreeNodeInstance) SendTo(to *TreeNode, msg interface{}) error {
 	return nil
 }
 
-// ELIASNEW
-// SendTo sends to a given node
-func (n *TreeNodeInstance) SendRumor(childrenNodeNumber int, msg interface{}) error {
-	n.msgDispatchQueueMutex.Lock()
-	if n.closing {
-		n.msgDispatchQueueMutex.Unlock()
-		return xerrors.New("is closing")
-	}
-	n.msgDispatchQueueMutex.Unlock()
-	var c *GenericConfig
-	// only sends the config once
-	n.configMut.Lock()
-	c = n.config
-	n.configMut.Unlock()
-
-	newTree := n.Roster().GenerateNaryTreeWithRoot(childrenNodeNumber, n.treeNode.ServerIdentity)
-	sentLen, err := n.overlay.StartRumor(n.token, newTree, msg, n.protoIO, c)
-	n.tx.add(sentLen)
-	if err != nil {
-		return xerrors.Errorf("sending: %v", err)
-	}
-	return nil
-}
-
-//
-
 // Tree returns the tree of that node. Because the storage keeps the tree around
 // until the protocol is done, this will never return a nil value. It will panic
 // if the tree is nil.

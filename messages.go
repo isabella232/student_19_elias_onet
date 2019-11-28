@@ -162,16 +162,16 @@ type OverlayMsg struct {
 
 type Rumor struct {
 	Id              uint32
-	From            TreeNodeID
+	Origin          network.ServerIdentityID
 	CurrentTreeNode *TreeNode
 	Message         interface{}
 }
 
 type RumorResponse struct {
 	Id              uint32
-	From            TreeNodeID
+	Origin          network.ServerIdentityID
 	CurrentTreeNode *TreeNode
-	AcknowledgedMap map[TreeNodeID]bool
+	Signatures      SignaturesMap
 }
 
 //
