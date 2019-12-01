@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"go.dedis.ch/kyber/v4/suites"
+	"go.dedis.ch/kyber/v3/suites"
 	"go.dedis.ch/onet/v4"
 	"go.dedis.ch/onet/v4/log"
 )

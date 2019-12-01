@@ -512,8 +512,12 @@ func TestSendRumor(t *testing.T) {
 		Dest: TokenID{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8},
 	}
 
-	_, bits, _ := h1.Overlay().SendRumor(*tree.Roster, tree.Root.ServerIdentity, 2, message, time.Second*20)
+	network.RegisterMessage(&OverlayMsg{})
 
-	require.NotEqual(t, 0, bits)
-	// TODO Fix test
+	signaturesMap, error := h1.Overlay().SendRumor(*tree.Roster, tree.Root.ServerIdentity, 2, message, time.Second*20)
+	//fmt.Println(signaturesMap)
+	//fmt.Println(error)
+	require.NotEqual(t, 0, signaturesMap)
+	require.NotEqual(t, 0, error)
+	// TODO Check why is there an overflow in the local test suite
 }

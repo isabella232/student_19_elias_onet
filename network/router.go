@@ -435,6 +435,16 @@ func (r *Router) Rx() uint64 {
 	return rx
 }
 
+// Increases the CounterIO for Tx by delta
+func (r *Router) AddTx(delta uint64) {
+	r.traffic.updateTx(delta)
+}
+
+// Increases the CounterIO for Rx by delta
+func (r *Router) AddRx(delta uint64) {
+	r.traffic.updateRx(delta)
+}
+
 // MsgTx implements monitor/CounterIO.
 // It returns the number of messages transmitted by the interface.
 func (r *Router) MsgTx() uint64 {

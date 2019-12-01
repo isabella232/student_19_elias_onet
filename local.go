@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"go.dedis.ch/kyber/v4"
-	"go.dedis.ch/kyber/v4/util/key"
+	"go.dedis.ch/kyber/v3"
+	"go.dedis.ch/kyber/v3/util/key"
 	"go.dedis.ch/onet/v4/log"
 	"go.dedis.ch/onet/v4/network"
 	"golang.org/x/xerrors"
