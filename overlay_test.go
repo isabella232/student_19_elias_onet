@@ -513,11 +513,17 @@ func TestSendRumor(t *testing.T) {
 	}
 
 	network.RegisterMessage(&OverlayMsg{})
-
-	signaturesMap, error := h1.Overlay().SendRumor(*tree.Roster, tree.Root.ServerIdentity, 2, message, time.Second*20)
-	//fmt.Println(signaturesMap)
+	timeout := time.Second * 10
+	err := h1.Overlay().SendRumor(*tree.Roster, 2, message, timeout)
+	select {
+	case <-time.After(timeout * 4):
+		log.Lvlf5("Timeout for testing")
+		//fmt.Println("timeout testtt")
+	}
+	//fmt.Println(h1.Overlay().RumorsSent)
+	//fmt.Println(h1.Overlay().RumorsSent[0].Acknowledgements)
 	//fmt.Println(error)
-	require.NotEqual(t, 0, signaturesMap)
-	require.NotEqual(t, 0, error)
-	// TODO Check why is there an overflow in the local test suite
+	require.NotEqual(t, 0, len(h1.Overlay().RumorsSent))
+	require.NotEqual(t, 0, len(h1.Overlay().RumorsSent[0].Acknowledgements))
+	require.Equal(t, nil, err)
 }

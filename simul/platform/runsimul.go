@@ -99,7 +99,7 @@ func Simulate(suite, serverAddress, simul, monitorAddress string) error {
 			_, err := scTmp.Server.Send(env.ServerIdentity, &simulInitDone{})
 			log.ErrFatal(err)
 			// not reached because of ErrFatal, but return it anyway.
-			return xerrors.Errorf("sending: %v", err)
+			return nil
 		})
 		server.RegisterProcessorFunc(simulInitDoneID, func(env *network.Envelope) error {
 			wgSimulInit.Done()
@@ -131,7 +131,7 @@ func Simulate(suite, serverAddress, simul, monitorAddress string) error {
 		// each level of the tree.
 		timeout := 1 * time.Second
 		for wait {
-			p, err := rootSC.Overlay.CreateProtocol("RumorSim", rootSC.Tree, onet.NilServiceID)
+			p, err := rootSC.Overlay.CreateProtocol("Count", rootSC.Tree, onet.NilServiceID)
 			if err != nil {
 				return xerrors.New("couldn't create protocol: " + err.Error())
 			}

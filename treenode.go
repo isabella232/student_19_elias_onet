@@ -895,3 +895,7 @@ func (n *TreeNodeInstance) isBound() bool {
 func (n *TreeNodeInstance) bind(pi ProtocolInstance) {
 	n.instance = pi
 }
+
+func (n *TreeNodeInstance) GetOverlay() *Overlay {
+	return n.overlay
+}
