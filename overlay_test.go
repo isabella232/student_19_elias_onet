@@ -503,27 +503,17 @@ func TestSendRumor(t *testing.T) {
 	h3 := hosts[2]
 	h3.AddTree(tree)
 
-	proc := newOverlayProc()
-	h1.RegisterProcessor(proc, ResponseTreeMsgID)
-	message := &ConfigMsg{
-		Config: GenericConfig{
-			Data: make([]byte, 0),
-		},
-		Dest: TokenID{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8},
-	}
+	message := []byte{0xaa, 0xbb, 0xcc}
+	timeout := time.Millisecond * 100
+	rumorId, err := h1.Overlay().SendRumor(*tree.Roster, 2, message, timeout)
+	time.Sleep(timeout * 2)
 
-	network.RegisterMessage(&OverlayMsg{})
-	timeout := time.Second * 10
-	err := h1.Overlay().SendRumor(*tree.Roster, 2, message, timeout)
-	select {
-	case <-time.After(timeout * 4):
-		log.Lvlf5("Timeout for testing")
-		//fmt.Println("timeout testtt")
-	}
-	//fmt.Println(h1.Overlay().RumorsSent)
-	//fmt.Println(h1.Overlay().RumorsSent[0].Acknowledgements)
-	//fmt.Println(error)
-	require.NotEqual(t, 0, len(h1.Overlay().RumorsSent))
-	require.NotEqual(t, 0, len(h1.Overlay().RumorsSent[0].Acknowledgements))
+	// Rumor Id sent should match the one returned by the SendRumor() function
+	require.Equal(t, h1.Overlay().RumorsSent[0].rumor.Id, uint32(rumorId))
+	// RumorsSent should contain 1 Rumor
+	require.Equal(t, 1, len(h1.Overlay().RumorsSent))
+	// Acknowledgements map  should contain 3 different acknowledgements
+	require.Equal(t, 3, len(h1.Overlay().RumorsSent[0].Acknowledgements))
+	// Error returned should be nil
 	require.Equal(t, nil, err)
 }

@@ -30,6 +30,12 @@ var SendRosterMsgID = RosterTypeID
 // ConfigMsgID of the generic config message
 var ConfigMsgID = network.RegisterMessage(ConfigMsg{})
 
+// RumorMsgID of Rumor message as registered in network
+var RumorMsgID = network.RegisterMessage(Rumor{})
+
+// RumorResponseMsgID of RumorResponse message as registered in network
+var RumorResponseMsgID = network.RegisterMessage(RumorResponse{})
+
 // ProtocolMsg is to be embedded in every message that is made for a
 // ProtocolInstance
 type ProtocolMsg struct {
@@ -155,7 +161,7 @@ type OverlayMsg struct {
 	// Deprecated: use ResponseTree to send the tree and the roster
 	TreeMarshal *TreeMarshal
 
-	// ELIASNEW
+	// For rumor sending
 	Rumor         *Rumor
 	RumorResponse *RumorResponse
 }
@@ -164,7 +170,7 @@ type Rumor struct {
 	Id        uint32
 	Origin    network.ServerIdentity
 	LeafNodes []network.ServerIdentity
-	Message   interface{}
+	Message   []byte
 }
 
 type RumorResponse struct {
@@ -172,8 +178,6 @@ type RumorResponse struct {
 	Origin           network.ServerIdentity
 	Acknowledgements AcknowledgementsMap
 }
-
-//
 
 // RequestRoster is used to ask the parent for a given Roster
 type RequestRoster struct {
