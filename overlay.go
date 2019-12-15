@@ -51,7 +51,8 @@ type Overlay struct {
 	pendingConfigsMut sync.Mutex
 
 	RumorsSent     []RumorSent
-	receivedRumors []Rumor
+	ReceivedRumors []Rumor
+	storeRumorMux  sync.Mutex
 }
 
 // NewOverlay creates a new overlay-structure
@@ -65,7 +66,7 @@ func NewOverlay(c *Server) *Overlay {
 		pendingTreeMarshal: make(map[RosterID][]*TreeMarshal),
 		pendingConfigs:     make(map[TokenID]*GenericConfig),
 		RumorsSent:         make([]RumorSent, 0),
-		receivedRumors:     make([]Rumor, 0),
+		ReceivedRumors:     make([]Rumor, 0),
 	}
 	o.protoIO = newMessageProxyStore(c.suite, c, o)
 	// messages going to protocol instances
@@ -805,7 +806,7 @@ type AcknowledgementsMap map[network.ServerIdentityID]bool
 
 // Start a rumor
 // Returns the Id of the new rumor
-func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, timeout time.Duration) (int, error) {
+func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, timeoutSecondRound time.Duration, rumorId int) (int, error) {
 	maxSizeNewRoster := 1 + childrenNodeNumber + childrenNodeNumber*childrenNodeNumber
 	if len(roster.List) < maxSizeNewRoster {
 		maxSizeNewRoster = len(roster.List)
@@ -815,19 +816,30 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 
 	// Generate tree
 	tree := roster.GenerateNaryTreeWithRoot(childrenNodeNumber, o.ServerIdentity())
-	newAcknowledgementMap := make(AcknowledgementsMap)
-	newAcknowledgementMap[o.ServerIdentity().ID] = true
-	newRumorId := len(o.RumorsSent)
-	newRumor := Rumor{
-		Id:      uint32(newRumorId),
-		Origin:  *newRosterList[0],
-		Message: msg,
+
+	// Insert to RumorsSent and ReceivedRumors
+	var auxRumor Rumor
+	if rumorId >= 0 {
+		auxRumor = Rumor{
+			Id:      o.RumorsSent[rumorId].rumor.Id,
+			Origin:  o.RumorsSent[rumorId].rumor.Origin,
+			Message: o.RumorsSent[rumorId].rumor.Message,
+		}
+	} else {
+		newAcknowledgementMap := make(AcknowledgementsMap)
+		newAcknowledgementMap[o.ServerIdentity().ID] = true
+		rumorId = len(o.RumorsSent)
+		auxRumor = Rumor{
+			Id:      uint32(rumorId),
+			Origin:  *newRosterList[0],
+			Message: msg,
+		}
+		o.RumorsSent = append(o.RumorsSent, RumorSent{
+			rumor:            auxRumor,
+			Acknowledgements: newAcknowledgementMap,
+		})
+		o.ReceivedRumors = append(o.ReceivedRumors, auxRumor)
 	}
-	o.RumorsSent = append(o.RumorsSent, RumorSent{
-		rumor:            newRumor,
-		Acknowledgements: newAcknowledgementMap,
-	})
-	o.receivedRumors = append(o.receivedRumors, newRumor)
 
 	// Send to children in generated tree
 	allSentLen := uint64(0)
@@ -839,24 +851,24 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 		}
 		auxMsg, err := io.Wrap(nil, &OverlayMsg{
 			Rumor: &Rumor{
-				Id:        newRumor.Id,
-				Origin:    newRumor.Origin,
+				Id:        auxRumor.Id,
+				Origin:    auxRumor.Origin,
 				LeafNodes: auxLeafNodes,
-				Message:   newRumor.Message,
+				Message:   auxRumor.Message,
 			},
 		})
 		sentLen, err := o.server.Send(childrenNode.ServerIdentity, auxMsg)
 		if err != nil {
 			o.server.Router.AddTx(allSentLen)
-			return newRumorId, xerrors.Errorf("Sending: %v", err)
+			return rumorId, xerrors.Errorf("Sending: %v", err)
 		}
 		allSentLen = allSentLen + sentLen
 	}
 
 	// Wait for acknowledgments first round
 	go func() {
-		time.Sleep(timeout)
-		collectedAcks := o.RumorsSent[newRumorId].Acknowledgements
+		time.Sleep(timeoutSecondRound)
+		collectedAcks := o.RumorsSent[rumorId].Acknowledgements
 		retryRosterList := make([]*network.ServerIdentity, 0)
 		for _, server := range newRosterList {
 			if !collectedAcks[server.ID] {
@@ -868,9 +880,9 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 			for _, childrenNode := range retryRosterList {
 				auxMsg, err := io.Wrap(nil, &OverlayMsg{
 					Rumor: &Rumor{
-						Id:      newRumor.Id,
-						Origin:  newRumor.Origin,
-						Message: newRumor.Message,
+						Id:      auxRumor.Id,
+						Origin:  auxRumor.Origin,
+						Message: auxRumor.Message,
 					},
 				})
 				sentLen, err := o.server.Send(childrenNode, auxMsg)
@@ -884,7 +896,7 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 		o.server.Router.AddTx(allSentLen)
 	}()
 
-	return newRumorId, nil
+	return rumorId, nil
 }
 
 // Get a random roster list from a roster, with a max size passed as the second parameter
@@ -922,14 +934,14 @@ func (o *Overlay) handleRumor(si *network.ServerIdentity, size network.Size, rum
 	o.server.Router.AddRx(uint64(size))
 	allSentLen := uint64(0)
 	indexReceived := o.findIndexReceivedRumors(rumor.Origin.ID, rumor.Id)
-	// If it is the first time we see this rumor, it is added to the receivedRumors
+	// If it is the first time we see this rumor, it is added to the ReceivedRumors
 	if indexReceived == -1 {
 		newRumor := Rumor{
 			Id:      rumor.Id,
 			Origin:  rumor.Origin,
 			Message: rumor.Message,
 		}
-		o.receivedRumors = append(o.receivedRumors, newRumor)
+		o.ReceivedRumors = append(o.ReceivedRumors, newRumor)
 	}
 	// Send RumorResponse back to the sender
 	newAcknowledgementMap := make(AcknowledgementsMap)
@@ -968,7 +980,7 @@ func (o *Overlay) handleRumor(si *network.ServerIdentity, size network.Size, rum
 
 // Find the index of a rumor, given its origin and id
 func (o *Overlay) findIndexReceivedRumors(origin network.ServerIdentityID, id uint32) int {
-	for index, rumor := range o.receivedRumors {
+	for index, rumor := range o.ReceivedRumors {
 		if rumor.Origin.ID.Equal(origin) && rumor.Id == id {
 			return index
 		}
@@ -981,9 +993,11 @@ func (o *Overlay) handleRumorResponse(si *network.ServerIdentity, size network.S
 	o.server.Router.AddRx(uint64(size))
 	// If you are the root, store the acknowledgement
 	if o.ServerIdentity().ID.Equal(rumorRes.Origin.ID) {
+		o.storeRumorMux.Lock()
 		for key := range rumorRes.Acknowledgements {
 			o.RumorsSent[(int(rumorRes.Id))].Acknowledgements[key] = true
 		}
+		o.storeRumorMux.Unlock()
 	} else {
 		// If you are not the root, forward this acknowledgement to the origin
 		rumorRes.Acknowledgements[o.ServerIdentity().ID] = true

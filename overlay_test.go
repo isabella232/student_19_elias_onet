@@ -505,11 +505,13 @@ func TestSendRumor(t *testing.T) {
 
 	message := []byte{0xaa, 0xbb, 0xcc}
 	timeout := time.Millisecond * 100
-	rumorId, err := h1.Overlay().SendRumor(*tree.Roster, 2, message, timeout)
+	rumorId, err := h1.Overlay().SendRumor(*tree.Roster, 2, message, timeout, -1)
 	time.Sleep(timeout * 2)
 
 	// Rumor Id sent should match the one returned by the SendRumor() function
 	require.Equal(t, h1.Overlay().RumorsSent[0].rumor.Id, uint32(rumorId))
+	// Rumor received in h2 should match the one sent by h1
+	require.Equal(t, h2.Overlay().ReceivedRumors[0].Id, h1.Overlay().RumorsSent[0].rumor.Id)
 	// RumorsSent should contain 1 Rumor
 	require.Equal(t, 1, len(h1.Overlay().RumorsSent))
 	// Acknowledgements map  should contain 3 different acknowledgements
