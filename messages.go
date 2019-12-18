@@ -174,9 +174,10 @@ type Rumor struct {
 }
 
 type RumorResponse struct {
-	Id               uint32
-	Origin           network.ServerIdentity
-	Acknowledgements AcknowledgementsMap
+	RumorId         uint32
+	RumorOrigin     network.ServerIdentity
+	ResponseNodeId  network.ServerIdentityID
+	ResponseMessage []byte
 }
 
 // RequestRoster is used to ask the parent for a given Roster

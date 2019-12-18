@@ -50,9 +50,10 @@ type Overlay struct {
 	pendingConfigs    map[TokenID]*GenericConfig
 	pendingConfigsMut sync.Mutex
 
-	RumorsSent     []RumorSent
-	ReceivedRumors []Rumor
-	storeRumorMux  sync.Mutex
+	RumorsSent          []RumorSent
+	ReceivedRumors      []Rumor
+	ModifyRumorResponse func([]byte) []byte
+	storeRumorMux       sync.Mutex
 }
 
 // NewOverlay creates a new overlay-structure
@@ -67,6 +68,10 @@ func NewOverlay(c *Server) *Overlay {
 		pendingConfigs:     make(map[TokenID]*GenericConfig),
 		RumorsSent:         make([]RumorSent, 0),
 		ReceivedRumors:     make([]Rumor, 0),
+		// By default no modifications are done to Rumor Responses
+		ModifyRumorResponse: func(message []byte) []byte {
+			return message
+		},
 	}
 	o.protoIO = newMessageProxyStore(c.suite, c, o)
 	// messages going to protocol instances
@@ -798,11 +803,9 @@ func (o *Overlay) RegisterMessageProxy(m MessageProxy) {
 }
 
 type RumorSent struct {
-	rumor            Rumor
-	Acknowledgements AcknowledgementsMap
+	Rumor            Rumor
+	Acknowledgements map[network.ServerIdentityID][]byte
 }
-
-type AcknowledgementsMap map[network.ServerIdentityID]bool
 
 // Start a rumor
 // Returns the Id of the new rumor
@@ -821,21 +824,24 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 	var auxRumor Rumor
 	if rumorId >= 0 {
 		auxRumor = Rumor{
-			Id:      o.RumorsSent[rumorId].rumor.Id,
-			Origin:  o.RumorsSent[rumorId].rumor.Origin,
-			Message: o.RumorsSent[rumorId].rumor.Message,
+			Id:      o.RumorsSent[rumorId].Rumor.Id,
+			Origin:  o.RumorsSent[rumorId].Rumor.Origin,
+			Message: o.RumorsSent[rumorId].Rumor.Message,
 		}
 	} else {
-		newAcknowledgementMap := make(AcknowledgementsMap)
-		newAcknowledgementMap[o.ServerIdentity().ID] = true
+		newAcknowledgementMap := make(map[network.ServerIdentityID][]byte)
+		newAcknowledgementMap[o.ServerIdentity().ID] = o.ModifyRumorResponse(msg)
 		rumorId = len(o.RumorsSent)
 		auxRumor = Rumor{
-			Id:      uint32(rumorId),
-			Origin:  *newRosterList[0],
+			Id: uint32(rumorId),
+			Origin: network.ServerIdentity{
+				ID:      newRosterList[0].ID,
+				Address: newRosterList[0].Address,
+			},
 			Message: msg,
 		}
 		o.RumorsSent = append(o.RumorsSent, RumorSent{
-			rumor:            auxRumor,
+			Rumor:            auxRumor,
 			Acknowledgements: newAcknowledgementMap,
 		})
 		o.ReceivedRumors = append(o.ReceivedRumors, auxRumor)
@@ -847,7 +853,10 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 	for _, childrenNode := range tree.Root.Children {
 		auxLeafNodes := make([]network.ServerIdentity, 0)
 		for _, leafNode := range childrenNode.Children {
-			auxLeafNodes = append(auxLeafNodes, *leafNode.ServerIdentity)
+			auxLeafNodes = append(auxLeafNodes, network.ServerIdentity{
+				ID:      leafNode.ServerIdentity.ID,
+				Address: leafNode.ServerIdentity.Address,
+			})
 		}
 		auxMsg, err := io.Wrap(nil, &OverlayMsg{
 			Rumor: &Rumor{
@@ -871,7 +880,7 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 		collectedAcks := o.RumorsSent[rumorId].Acknowledgements
 		retryRosterList := make([]*network.ServerIdentity, 0)
 		for _, server := range newRosterList {
-			if !collectedAcks[server.ID] {
+			if _, ok := collectedAcks[server.ID]; !ok {
 				retryRosterList = append(retryRosterList, server)
 			}
 		}
@@ -944,13 +953,12 @@ func (o *Overlay) handleRumor(si *network.ServerIdentity, size network.Size, rum
 		o.ReceivedRumors = append(o.ReceivedRumors, newRumor)
 	}
 	// Send RumorResponse back to the sender
-	newAcknowledgementMap := make(AcknowledgementsMap)
-	newAcknowledgementMap[o.ServerIdentity().ID] = true
 	auxMsg, err := io.Wrap(nil, &OverlayMsg{
 		RumorResponse: &RumorResponse{
-			Id:               rumor.Id,
-			Origin:           rumor.Origin,
-			Acknowledgements: newAcknowledgementMap,
+			RumorId:         rumor.Id,
+			RumorOrigin:     rumor.Origin,
+			ResponseNodeId:  o.ServerIdentity().ID,
+			ResponseMessage: o.ModifyRumorResponse(rumor.Message),
 		},
 	})
 	allSentLen, err = o.server.Send(si, auxMsg)
@@ -992,23 +1000,16 @@ func (o *Overlay) findIndexReceivedRumors(origin network.ServerIdentityID, id ui
 func (o *Overlay) handleRumorResponse(si *network.ServerIdentity, size network.Size, rumorRes *RumorResponse, io MessageProxy) {
 	o.server.Router.AddRx(uint64(size))
 	// If you are the root, store the acknowledgement
-	if o.ServerIdentity().ID.Equal(rumorRes.Origin.ID) {
+	if o.ServerIdentity().ID.Equal(rumorRes.RumorOrigin.ID) {
 		o.storeRumorMux.Lock()
-		for key := range rumorRes.Acknowledgements {
-			o.RumorsSent[(int(rumorRes.Id))].Acknowledgements[key] = true
-		}
+		o.RumorsSent[(int(rumorRes.RumorId))].Acknowledgements[rumorRes.ResponseNodeId] = rumorRes.ResponseMessage
 		o.storeRumorMux.Unlock()
 	} else {
 		// If you are not the root, forward this acknowledgement to the origin
-		rumorRes.Acknowledgements[o.ServerIdentity().ID] = true
 		auxMsg, err := io.Wrap(nil, &OverlayMsg{
-			RumorResponse: &RumorResponse{
-				Id:               rumorRes.Id,
-				Origin:           rumorRes.Origin,
-				Acknowledgements: rumorRes.Acknowledgements,
-			},
+			RumorResponse: rumorRes,
 		})
-		sentLen, err := o.server.Send(&rumorRes.Origin, auxMsg)
+		sentLen, err := o.server.Send(&rumorRes.RumorOrigin, auxMsg)
 		if err != nil {
 			log.Error("Couldn't send rumor response from leaf:", err)
 		}

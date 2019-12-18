@@ -491,31 +491,65 @@ func TestTokenId(t *testing.T) {
 	}
 }
 
-func TestSendRumor(t *testing.T) {
+func TestOverlaySendRumor(t *testing.T) {
 	local := NewLocalTest(tSuite)
 	hosts, _, tree := local.GenTree(3, false)
 	defer local.CloseAll()
 
+	// Set 3 hosts
 	h1 := hosts[0]
-	h1.overlay.treeStorage.Register(tree.ID)
+	h1.Overlay().treeStorage.Register(tree.ID)
 	h2 := hosts[1]
 	h2.AddTree(tree)
 	h3 := hosts[2]
 	h3.AddTree(tree)
 
+	// Send Rumor
 	message := []byte{0xaa, 0xbb, 0xcc}
 	timeout := time.Millisecond * 100
 	rumorId, err := h1.Overlay().SendRumor(*tree.Roster, 2, message, timeout, -1)
 	time.Sleep(timeout * 2)
 
 	// Rumor Id sent should match the one returned by the SendRumor() function
-	require.Equal(t, h1.Overlay().RumorsSent[0].rumor.Id, uint32(rumorId))
+	require.Equal(t, h1.Overlay().RumorsSent[0].Rumor.Id, uint32(rumorId))
 	// Rumor received in h2 should match the one sent by h1
-	require.Equal(t, h2.Overlay().ReceivedRumors[0].Id, h1.Overlay().RumorsSent[0].rumor.Id)
+	require.Equal(t, h2.Overlay().ReceivedRumors[0].Id, h1.Overlay().RumorsSent[0].Rumor.Id)
+	require.Equal(t, h2.Overlay().ReceivedRumors[0].Origin, h1.Overlay().RumorsSent[0].Rumor.Origin)
+	require.Equal(t, h2.Overlay().ReceivedRumors[0].Message, h1.Overlay().RumorsSent[0].Rumor.Message)
 	// RumorsSent should contain 1 Rumor
 	require.Equal(t, 1, len(h1.Overlay().RumorsSent))
-	// Acknowledgements map  should contain 3 different acknowledgements
+	// Acknowledgements map should contain 3 acknowledgements
 	require.Equal(t, 3, len(h1.Overlay().RumorsSent[0].Acknowledgements))
+	// Error returned should be nil
+	require.Equal(t, nil, err)
+}
+
+func TestOverlayModifyRumorResponse(t *testing.T) {
+	local := NewLocalTest(tSuite)
+	hosts, _, tree := local.GenTree(3, false)
+	defer local.CloseAll()
+
+	// Set 3 hosts
+	h1 := hosts[0]
+	h1.Overlay().treeStorage.Register(tree.ID)
+	h2 := hosts[1]
+	h2.AddTree(tree)
+	h3 := hosts[2]
+	h3.AddTree(tree)
+
+	// Set ModifyRumorResponse function in host h3, to return 0x00
+	h3.Overlay().ModifyRumorResponse = func(message []byte) []byte {
+		return []byte{0x00}
+	}
+
+	// Send Rumor
+	message := []byte{0xaa, 0xbb, 0xcc}
+	timeout := time.Millisecond * 100
+	_, err := h1.Overlay().SendRumor(*tree.Roster, 2, message, timeout, -1)
+	time.Sleep(timeout * 2)
+
+	// Rumor response received in h1 should be overridden and equal 0x00
+	require.Equal(t, []byte{0x00}, h1.Overlay().RumorsSent[0].Acknowledgements[h3.ServerIdentity.ID])
 	// Error returned should be nil
 	require.Equal(t, nil, err)
 }
