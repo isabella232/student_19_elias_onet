@@ -538,7 +538,7 @@ func TestOverlayModifyRumorResponse(t *testing.T) {
 	h3.AddTree(tree)
 
 	// Set ModifyRumorResponse function in host h3, to return 0x00
-	h3.Overlay().ModifyRumorResponse = func(message []byte) []byte {
+	h3.Overlay().ModifyRumorResponse = func(o *Overlay, message []byte) []byte {
 		return []byte{0x00}
 	}
 

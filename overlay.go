@@ -52,7 +52,7 @@ type Overlay struct {
 
 	RumorsSent          []RumorSent
 	ReceivedRumors      []Rumor
-	ModifyRumorResponse func([]byte) []byte
+	ModifyRumorResponse func(*Overlay, []byte) []byte
 	storeRumorMux       sync.Mutex
 }
 
@@ -69,7 +69,7 @@ func NewOverlay(c *Server) *Overlay {
 		RumorsSent:         make([]RumorSent, 0),
 		ReceivedRumors:     make([]Rumor, 0),
 		// By default no modifications are done to Rumor Responses
-		ModifyRumorResponse: func(message []byte) []byte {
+		ModifyRumorResponse: func(o *Overlay, message []byte) []byte {
 			return message
 		},
 	}
@@ -830,7 +830,7 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 		}
 	} else {
 		newAcknowledgementMap := make(map[network.ServerIdentityID][]byte)
-		newAcknowledgementMap[o.ServerIdentity().ID] = o.ModifyRumorResponse(msg)
+		newAcknowledgementMap[o.ServerIdentity().ID] = o.ModifyRumorResponse(o, msg)
 		rumorId = len(o.RumorsSent)
 		auxRumor = Rumor{
 			Id: uint32(rumorId),
@@ -958,7 +958,7 @@ func (o *Overlay) handleRumor(si *network.ServerIdentity, size network.Size, rum
 			RumorId:         rumor.Id,
 			RumorOrigin:     rumor.Origin,
 			ResponseNodeId:  o.ServerIdentity().ID,
-			ResponseMessage: o.ModifyRumorResponse(rumor.Message),
+			ResponseMessage: o.ModifyRumorResponse(o, rumor.Message),
 		},
 	})
 	allSentLen, err = o.server.Send(si, auxMsg)
