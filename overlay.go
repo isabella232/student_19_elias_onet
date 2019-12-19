@@ -837,7 +837,6 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 			Origin: network.ServerIdentity{
 				ID:      newRosterList[0].ID,
 				Address: newRosterList[0].Address,
-				Public:  newRosterList[0].Public,
 			},
 			Message: msg,
 		}
@@ -857,7 +856,6 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 			auxLeafNodes = append(auxLeafNodes, network.ServerIdentity{
 				ID:      leafNode.ServerIdentity.ID,
 				Address: leafNode.ServerIdentity.Address,
-				Public:  leafNode.ServerIdentity.Public,
 			})
 		}
 		auxMsg, err := io.Wrap(nil, &OverlayMsg{
