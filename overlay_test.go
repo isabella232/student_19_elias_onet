@@ -514,7 +514,7 @@ func TestOverlaySendRumor(t *testing.T) {
 	require.Equal(t, h1.Overlay().RumorsSent[0].Rumor.Id, uint32(rumorId))
 	// Rumor received in h2 should match the one sent by h1
 	require.Equal(t, h2.Overlay().ReceivedRumors[0].Id, h1.Overlay().RumorsSent[0].Rumor.Id)
-	require.Equal(t, h2.Overlay().ReceivedRumors[0].Origin, h1.Overlay().RumorsSent[0].Rumor.Origin)
+	require.Equal(t, h2.Overlay().ReceivedRumors[0].Origin.ID, h1.Overlay().RumorsSent[0].Rumor.Origin.ID)
 	require.Equal(t, h2.Overlay().ReceivedRumors[0].Message, h1.Overlay().RumorsSent[0].Rumor.Message)
 	// RumorsSent should contain 1 Rumor
 	require.Equal(t, 1, len(h1.Overlay().RumorsSent))
@@ -538,7 +538,7 @@ func TestOverlayModifyRumorResponse(t *testing.T) {
 	h3.AddTree(tree)
 
 	// Set ModifyRumorResponse function in host h3, to return 0x00
-	h3.Overlay().ModifyRumorResponse = func(o *Overlay, message []byte) []byte {
+	h3.Overlay().ModifyRumorResponse = func(message []byte) []byte {
 		return []byte{0x00}
 	}
 

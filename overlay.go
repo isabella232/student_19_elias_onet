@@ -52,7 +52,7 @@ type Overlay struct {
 
 	RumorsSent          []RumorSent
 	ReceivedRumors      []Rumor
-	ModifyRumorResponse func(*Overlay, []byte) []byte
+	ModifyRumorResponse func([]byte) []byte
 	storeRumorMux       sync.Mutex
 }
 
@@ -69,7 +69,7 @@ func NewOverlay(c *Server) *Overlay {
 		RumorsSent:         make([]RumorSent, 0),
 		ReceivedRumors:     make([]Rumor, 0),
 		// By default no modifications are done to Rumor Responses
-		ModifyRumorResponse: func(o *Overlay, message []byte) []byte {
+		ModifyRumorResponse: func(message []byte) []byte {
 			return message
 		},
 	}
@@ -830,13 +830,14 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 		}
 	} else {
 		newAcknowledgementMap := make(map[network.ServerIdentityID][]byte)
-		newAcknowledgementMap[o.ServerIdentity().ID] = o.ModifyRumorResponse(o, msg)
+		newAcknowledgementMap[o.ServerIdentity().ID] = o.ModifyRumorResponse(msg)
 		rumorId = len(o.RumorsSent)
 		auxRumor = Rumor{
 			Id: uint32(rumorId),
 			Origin: network.ServerIdentity{
 				ID:      newRosterList[0].ID,
 				Address: newRosterList[0].Address,
+				Public:  newRosterList[0].Public,
 			},
 			Message: msg,
 		}
@@ -856,6 +857,7 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 			auxLeafNodes = append(auxLeafNodes, network.ServerIdentity{
 				ID:      leafNode.ServerIdentity.ID,
 				Address: leafNode.ServerIdentity.Address,
+				Public:  leafNode.ServerIdentity.Public,
 			})
 		}
 		auxMsg, err := io.Wrap(nil, &OverlayMsg{
@@ -958,7 +960,7 @@ func (o *Overlay) handleRumor(si *network.ServerIdentity, size network.Size, rum
 			RumorId:         rumor.Id,
 			RumorOrigin:     rumor.Origin,
 			ResponseNodeId:  o.ServerIdentity().ID,
-			ResponseMessage: o.ModifyRumorResponse(o, rumor.Message),
+			ResponseMessage: o.ModifyRumorResponse(rumor.Message),
 		},
 	})
 	allSentLen, err = o.server.Send(si, auxMsg)
