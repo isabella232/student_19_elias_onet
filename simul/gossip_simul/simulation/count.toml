@@ -1,8 +1,0 @@
-Servers = 16
-Simulation = "RumorSim"
-BF = 2
-Rounds = 1
-Suite = "Ed25519"
-
-Hosts
-3

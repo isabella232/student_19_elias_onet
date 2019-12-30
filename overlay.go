@@ -117,8 +117,10 @@ func (o *Overlay) Process(env *network.Envelope) {
 		o.handleSendRoster(env.ServerIdentity, info.Roster)
 	case info.Rumor != nil:
 		o.handleRumor(env.ServerIdentity, env.Size, info.Rumor, io)
+		break
 	case info.RumorResponse != nil:
 		o.handleRumorResponse(env.ServerIdentity, env.Size, info.RumorResponse, io)
+		break
 	default:
 		typ := network.MessageType(inner)
 		protoMsg := &ProtocolMsg{
@@ -823,14 +825,17 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 	// Insert to RumorsSent and ReceivedRumors
 	var auxRumor Rumor
 	if rumorId >= 0 {
+		o.storeRumorMux.Lock()
 		auxRumor = Rumor{
 			Id:      o.RumorsSent[rumorId].Rumor.Id,
 			Origin:  o.RumorsSent[rumorId].Rumor.Origin,
 			Message: o.RumorsSent[rumorId].Rumor.Message,
 		}
+		o.storeRumorMux.Unlock()
 	} else {
 		newAcknowledgementMap := make(map[network.ServerIdentityID][]byte)
 		newAcknowledgementMap[o.ServerIdentity().ID] = o.ModifyRumorResponse(msg)
+		o.storeRumorMux.Lock()
 		rumorId = len(o.RumorsSent)
 		auxRumor = Rumor{
 			Id: uint32(rumorId),
@@ -846,6 +851,7 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 			Acknowledgements: newAcknowledgementMap,
 		})
 		o.ReceivedRumors = append(o.ReceivedRumors, auxRumor)
+		o.storeRumorMux.Unlock()
 	}
 
 	// Send to children in generated tree
@@ -879,7 +885,12 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 	// Wait for acknowledgments first round
 	go func() {
 		time.Sleep(timeoutSecondRound)
-		collectedAcks := o.RumorsSent[rumorId].Acknowledgements
+		o.storeRumorMux.Lock()
+		collectedAcks := make(map[network.ServerIdentityID][]byte)
+		for id, ack := range o.RumorsSent[rumorId].Acknowledgements {
+			collectedAcks[id] = ack
+		}
+		o.storeRumorMux.Unlock()
 		retryRosterList := make([]*network.ServerIdentity, 0)
 		for _, server := range newRosterList {
 			if _, ok := collectedAcks[server.ID]; !ok {
@@ -944,6 +955,7 @@ func (o *Overlay) getRandomRosterList(roster Roster, maxSizeNewRoster int) []*ne
 func (o *Overlay) handleRumor(si *network.ServerIdentity, size network.Size, rumor *Rumor, io MessageProxy) {
 	o.server.Router.AddRx(uint64(size))
 	allSentLen := uint64(0)
+	o.storeRumorMux.Lock()
 	indexReceived := o.findIndexReceivedRumors(rumor.Origin.ID, rumor.Id)
 	// If it is the first time we see this rumor, it is added to the ReceivedRumors
 	if indexReceived == -1 {
@@ -954,6 +966,7 @@ func (o *Overlay) handleRumor(si *network.ServerIdentity, size network.Size, rum
 		}
 		o.ReceivedRumors = append(o.ReceivedRumors, newRumor)
 	}
+	o.storeRumorMux.Unlock()
 	// Send RumorResponse back to the sender
 	auxMsg, err := io.Wrap(nil, &OverlayMsg{
 		RumorResponse: &RumorResponse{
