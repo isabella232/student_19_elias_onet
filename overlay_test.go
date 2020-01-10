@@ -507,7 +507,7 @@ func TestOverlaySendHybridRumor(t *testing.T) {
 	// Send Hybrid Rumor
 	message := []byte{0xaa, 0xbb, 0xcc}
 	timeout := time.Millisecond * 100
-	rumorId, err := h1.Overlay().SendRumor(*tree.Roster, 2, message, timeout, -1)
+	rumorId, err := h1.Overlay().SendHybridRumor(*tree.Roster, 2, message, timeout, -1)
 	time.Sleep(timeout * 2)
 
 	// Rumor Id sent should match the one returned by the SendRumor() function
@@ -545,7 +545,7 @@ func TestOverlayModifyHybridRumorResponse(t *testing.T) {
 	// Send Rumor
 	message := []byte{0xaa, 0xbb, 0xcc}
 	timeout := time.Millisecond * 100
-	_, err := h1.Overlay().SendRumor(*tree.Roster, 2, message, timeout, -1)
+	_, err := h1.Overlay().SendHybridRumor(*tree.Roster, 2, message, timeout, -1)
 	time.Sleep(timeout * 2)
 
 	// Rumor response received in h1 should be overridden and equal 0x00

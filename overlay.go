@@ -811,7 +811,7 @@ type HybridRumorSent struct {
 
 // Start a hybrid rumor
 // Returns the Id of the new rumor
-func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, timeoutSecondRound time.Duration, rumorId int) (int, error) {
+func (o *Overlay) SendHybridRumor(roster Roster, childrenNodeNumber int, msg []byte, timeoutSecondRound time.Duration, rumorId int) (int, error) {
 	maxSizeNewRoster := 1 + childrenNodeNumber + childrenNodeNumber*childrenNodeNumber
 	if len(roster.List) < maxSizeNewRoster {
 		maxSizeNewRoster = len(roster.List)
