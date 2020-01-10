@@ -491,7 +491,7 @@ func TestTokenId(t *testing.T) {
 	}
 }
 
-func TestOverlaySendRumor(t *testing.T) {
+func TestOverlaySendHybridRumor(t *testing.T) {
 	local := NewLocalTest(tSuite)
 	hosts, _, tree := local.GenTree(3, false)
 	defer local.CloseAll()
@@ -504,27 +504,27 @@ func TestOverlaySendRumor(t *testing.T) {
 	h3 := hosts[2]
 	h3.AddTree(tree)
 
-	// Send Rumor
+	// Send Hybrid Rumor
 	message := []byte{0xaa, 0xbb, 0xcc}
 	timeout := time.Millisecond * 100
 	rumorId, err := h1.Overlay().SendRumor(*tree.Roster, 2, message, timeout, -1)
 	time.Sleep(timeout * 2)
 
 	// Rumor Id sent should match the one returned by the SendRumor() function
-	require.Equal(t, h1.Overlay().RumorsSent[0].Rumor.Id, uint32(rumorId))
+	require.Equal(t, h1.Overlay().HybridRumorsSent[0].Rumor.Id, uint32(rumorId))
 	// Rumor received in h2 should match the one sent by h1
-	require.Equal(t, h2.Overlay().ReceivedRumors[0].Id, h1.Overlay().RumorsSent[0].Rumor.Id)
-	require.Equal(t, h2.Overlay().ReceivedRumors[0].Origin.ID, h1.Overlay().RumorsSent[0].Rumor.Origin.ID)
-	require.Equal(t, h2.Overlay().ReceivedRumors[0].Message, h1.Overlay().RumorsSent[0].Rumor.Message)
+	require.Equal(t, h2.Overlay().ReceivedHybridRumors[0].Id, h1.Overlay().HybridRumorsSent[0].Rumor.Id)
+	require.Equal(t, h2.Overlay().ReceivedHybridRumors[0].Origin.ID, h1.Overlay().HybridRumorsSent[0].Rumor.Origin.ID)
+	require.Equal(t, h2.Overlay().ReceivedHybridRumors[0].Message, h1.Overlay().HybridRumorsSent[0].Rumor.Message)
 	// RumorsSent should contain 1 Rumor
-	require.Equal(t, 1, len(h1.Overlay().RumorsSent))
+	require.Equal(t, 1, len(h1.Overlay().HybridRumorsSent))
 	// Acknowledgements map should contain 3 acknowledgements
-	require.Equal(t, 3, len(h1.Overlay().RumorsSent[0].Acknowledgements))
+	require.Equal(t, 3, len(h1.Overlay().HybridRumorsSent[0].Acknowledgements))
 	// Error returned should be nil
 	require.Equal(t, nil, err)
 }
 
-func TestOverlayModifyRumorResponse(t *testing.T) {
+func TestOverlayModifyHybridRumorResponse(t *testing.T) {
 	local := NewLocalTest(tSuite)
 	hosts, _, tree := local.GenTree(3, false)
 	defer local.CloseAll()
@@ -538,7 +538,7 @@ func TestOverlayModifyRumorResponse(t *testing.T) {
 	h3.AddTree(tree)
 
 	// Set ModifyRumorResponse function in host h3, to return 0x00
-	h3.Overlay().ModifyRumorResponse = func(message []byte) []byte {
+	h3.Overlay().ModifyHybridRumorResponse = func(message []byte) []byte {
 		return []byte{0x00}
 	}
 
@@ -549,7 +549,7 @@ func TestOverlayModifyRumorResponse(t *testing.T) {
 	time.Sleep(timeout * 2)
 
 	// Rumor response received in h1 should be overridden and equal 0x00
-	require.Equal(t, []byte{0x00}, h1.Overlay().RumorsSent[0].Acknowledgements[h3.ServerIdentity.ID])
+	require.Equal(t, []byte{0x00}, h1.Overlay().HybridRumorsSent[0].Acknowledgements[h3.ServerIdentity.ID])
 	// Error returned should be nil
 	require.Equal(t, nil, err)
 }

@@ -178,7 +178,7 @@ func Simulate(suite, serverAddress, simul, monitorAddress string) error {
 
 		// Recreate a tree out of the original roster, to be sure all nodes are included and
 		// that the tree is easy to close.
-		closeTree := rootSC.Roster.GenerateBinaryTree()
+		closeTree := rootSC.Tree
 		pi, err := rootSC.Overlay.CreateProtocol("CloseAll", closeTree, onet.NilServiceID)
 		if err != nil {
 			return xerrors.New("couldn't create closeAll protocol: " + err.Error())

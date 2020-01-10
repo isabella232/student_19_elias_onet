@@ -30,11 +30,11 @@ var SendRosterMsgID = RosterTypeID
 // ConfigMsgID of the generic config message
 var ConfigMsgID = network.RegisterMessage(ConfigMsg{})
 
-// RumorMsgID of Rumor message as registered in network
-var RumorMsgID = network.RegisterMessage(Rumor{})
+// HybridRumorMsgID of HybridRumor message as registered in network
+var HybridRumorMsgID = network.RegisterMessage(HybridRumor{})
 
-// RumorResponseMsgID of RumorResponse message as registered in network
-var RumorResponseMsgID = network.RegisterMessage(RumorResponse{})
+// HybridRumorResponseMsgID of HybridRumorResponse message as registered in network
+var HybridRumorResponseMsgID = network.RegisterMessage(HybridRumorResponse{})
 
 // ProtocolMsg is to be embedded in every message that is made for a
 // ProtocolInstance
@@ -161,19 +161,19 @@ type OverlayMsg struct {
 	// Deprecated: use ResponseTree to send the tree and the roster
 	TreeMarshal *TreeMarshal
 
-	// For rumor sending
-	Rumor         *Rumor
-	RumorResponse *RumorResponse
+	// For hybrid rumor sending
+	HybridRumor         *HybridRumor
+	HybridRumorResponse *HybridRumorResponse
 }
 
-type Rumor struct {
+type HybridRumor struct {
 	Id        uint32
 	Origin    network.ServerIdentity
 	LeafNodes []network.ServerIdentity
 	Message   []byte
 }
 
-type RumorResponse struct {
+type HybridRumorResponse struct {
 	RumorId         uint32
 	RumorOrigin     network.ServerIdentity
 	ResponseNodeId  network.ServerIdentityID

@@ -50,26 +50,26 @@ type Overlay struct {
 	pendingConfigs    map[TokenID]*GenericConfig
 	pendingConfigsMut sync.Mutex
 
-	RumorsSent          []RumorSent
-	ReceivedRumors      []Rumor
-	ModifyRumorResponse func([]byte) []byte
-	storeRumorMux       sync.Mutex
+	HybridRumorsSent          []HybridRumorSent
+	ReceivedHybridRumors      []HybridRumor
+	ModifyHybridRumorResponse func([]byte) []byte
+	storeHybridRumorMux       sync.Mutex
 }
 
 // NewOverlay creates a new overlay-structure
 func NewOverlay(c *Server) *Overlay {
 	o := &Overlay{
-		server:             c,
-		treeStorage:        newTreeStorage(globalProtocolTimeout),
-		instances:          make(map[TokenID]*TreeNodeInstance),
-		instancesInfo:      make(map[TokenID]bool),
-		protocolInstances:  make(map[TokenID]ProtocolInstance),
-		pendingTreeMarshal: make(map[RosterID][]*TreeMarshal),
-		pendingConfigs:     make(map[TokenID]*GenericConfig),
-		RumorsSent:         make([]RumorSent, 0),
-		ReceivedRumors:     make([]Rumor, 0),
+		server:               c,
+		treeStorage:          newTreeStorage(globalProtocolTimeout),
+		instances:            make(map[TokenID]*TreeNodeInstance),
+		instancesInfo:        make(map[TokenID]bool),
+		protocolInstances:    make(map[TokenID]ProtocolInstance),
+		pendingTreeMarshal:   make(map[RosterID][]*TreeMarshal),
+		pendingConfigs:       make(map[TokenID]*GenericConfig),
+		HybridRumorsSent:     make([]HybridRumorSent, 0),
+		ReceivedHybridRumors: make([]HybridRumor, 0),
 		// By default no modifications are done to Rumor Responses
-		ModifyRumorResponse: func(message []byte) []byte {
+		ModifyHybridRumorResponse: func(message []byte) []byte {
 			return message
 		},
 	}
@@ -83,8 +83,8 @@ func NewOverlay(c *Server) *Overlay {
 		SendRosterMsgID,
 		SendTreeMsgID,
 		ConfigMsgID, // fetch config information
-		RumorMsgID,
-		RumorResponseMsgID)
+		HybridRumorMsgID,
+		HybridRumorResponseMsgID)
 	return o
 }
 
@@ -115,11 +115,11 @@ func (o *Overlay) Process(env *network.Envelope) {
 		o.handleRequestRoster(env.ServerIdentity, info.RequestRoster, io)
 	case info.Roster != nil:
 		o.handleSendRoster(env.ServerIdentity, info.Roster)
-	case info.Rumor != nil:
-		o.handleRumor(env.ServerIdentity, env.Size, info.Rumor, io)
+	case info.HybridRumor != nil:
+		o.handleRumor(env.ServerIdentity, env.Size, info.HybridRumor, io)
 		break
-	case info.RumorResponse != nil:
-		o.handleRumorResponse(env.ServerIdentity, env.Size, info.RumorResponse, io)
+	case info.HybridRumorResponse != nil:
+		o.handleRumorResponse(env.ServerIdentity, env.Size, info.HybridRumorResponse, io)
 		break
 	default:
 		typ := network.MessageType(inner)
@@ -804,12 +804,12 @@ func (o *Overlay) RegisterMessageProxy(m MessageProxy) {
 	o.protoIO.RegisterMessageProxy(m)
 }
 
-type RumorSent struct {
-	Rumor            Rumor
+type HybridRumorSent struct {
+	Rumor            HybridRumor
 	Acknowledgements map[network.ServerIdentityID][]byte
 }
 
-// Start a rumor
+// Start a hybrid rumor
 // Returns the Id of the new rumor
 func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, timeoutSecondRound time.Duration, rumorId int) (int, error) {
 	maxSizeNewRoster := 1 + childrenNodeNumber + childrenNodeNumber*childrenNodeNumber
@@ -822,22 +822,22 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 	// Generate tree
 	tree := roster.GenerateNaryTreeWithRoot(childrenNodeNumber, o.ServerIdentity())
 
-	// Insert to RumorsSent and ReceivedRumors
-	var auxRumor Rumor
+	// Insert to HybridRumorsSent and ReceivedHybridRumors
+	var auxRumor HybridRumor
 	if rumorId >= 0 {
-		o.storeRumorMux.Lock()
-		auxRumor = Rumor{
-			Id:      o.RumorsSent[rumorId].Rumor.Id,
-			Origin:  o.RumorsSent[rumorId].Rumor.Origin,
-			Message: o.RumorsSent[rumorId].Rumor.Message,
+		o.storeHybridRumorMux.Lock()
+		auxRumor = HybridRumor{
+			Id:      o.HybridRumorsSent[rumorId].Rumor.Id,
+			Origin:  o.HybridRumorsSent[rumorId].Rumor.Origin,
+			Message: o.HybridRumorsSent[rumorId].Rumor.Message,
 		}
-		o.storeRumorMux.Unlock()
+		o.storeHybridRumorMux.Unlock()
 	} else {
 		newAcknowledgementMap := make(map[network.ServerIdentityID][]byte)
-		newAcknowledgementMap[o.ServerIdentity().ID] = o.ModifyRumorResponse(msg)
-		o.storeRumorMux.Lock()
-		rumorId = len(o.RumorsSent)
-		auxRumor = Rumor{
+		newAcknowledgementMap[o.ServerIdentity().ID] = o.ModifyHybridRumorResponse(msg)
+		o.storeHybridRumorMux.Lock()
+		rumorId = len(o.HybridRumorsSent)
+		auxRumor = HybridRumor{
 			Id: uint32(rumorId),
 			Origin: network.ServerIdentity{
 				ID:      newRosterList[0].ID,
@@ -846,17 +846,17 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 			},
 			Message: msg,
 		}
-		o.RumorsSent = append(o.RumorsSent, RumorSent{
+		o.HybridRumorsSent = append(o.HybridRumorsSent, HybridRumorSent{
 			Rumor:            auxRumor,
 			Acknowledgements: newAcknowledgementMap,
 		})
-		o.ReceivedRumors = append(o.ReceivedRumors, auxRumor)
-		o.storeRumorMux.Unlock()
+		o.ReceivedHybridRumors = append(o.ReceivedHybridRumors, auxRumor)
+		o.storeHybridRumorMux.Unlock()
 	}
 
 	// Send to children in generated tree
 	allSentLen := uint64(0)
-	io := o.protoIO.getByPacketType(RumorMsgID)
+	io := o.protoIO.getByPacketType(HybridRumorMsgID)
 	for _, childrenNode := range tree.Root.Children {
 		auxLeafNodes := make([]network.ServerIdentity, 0)
 		for _, leafNode := range childrenNode.Children {
@@ -867,7 +867,7 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 			})
 		}
 		auxMsg, err := io.Wrap(nil, &OverlayMsg{
-			Rumor: &Rumor{
+			HybridRumor: &HybridRumor{
 				Id:        auxRumor.Id,
 				Origin:    auxRumor.Origin,
 				LeafNodes: auxLeafNodes,
@@ -885,12 +885,12 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 	// Wait for acknowledgments first round
 	go func() {
 		time.Sleep(timeoutSecondRound)
-		o.storeRumorMux.Lock()
+		o.storeHybridRumorMux.Lock()
 		collectedAcks := make(map[network.ServerIdentityID][]byte)
-		for id, ack := range o.RumorsSent[rumorId].Acknowledgements {
+		for id, ack := range o.HybridRumorsSent[rumorId].Acknowledgements {
 			collectedAcks[id] = ack
 		}
-		o.storeRumorMux.Unlock()
+		o.storeHybridRumorMux.Unlock()
 		retryRosterList := make([]*network.ServerIdentity, 0)
 		for _, server := range newRosterList {
 			if _, ok := collectedAcks[server.ID]; !ok {
@@ -901,7 +901,7 @@ func (o *Overlay) SendRumor(roster Roster, childrenNodeNumber int, msg []byte, t
 		if len(retryRosterList) > 0 {
 			for _, childrenNode := range retryRosterList {
 				auxMsg, err := io.Wrap(nil, &OverlayMsg{
-					Rumor: &Rumor{
+					HybridRumor: &HybridRumor{
 						Id:      auxRumor.Id,
 						Origin:  auxRumor.Origin,
 						Message: auxRumor.Message,
@@ -952,28 +952,28 @@ func (o *Overlay) getRandomRosterList(roster Roster, maxSizeNewRoster int) []*ne
 }
 
 // Receive a rumor from a peer
-func (o *Overlay) handleRumor(si *network.ServerIdentity, size network.Size, rumor *Rumor, io MessageProxy) {
+func (o *Overlay) handleRumor(si *network.ServerIdentity, size network.Size, rumor *HybridRumor, io MessageProxy) {
 	o.server.Router.AddRx(uint64(size))
 	allSentLen := uint64(0)
-	o.storeRumorMux.Lock()
+	o.storeHybridRumorMux.Lock()
 	indexReceived := o.findIndexReceivedRumors(rumor.Origin.ID, rumor.Id)
 	// If it is the first time we see this rumor, it is added to the ReceivedRumors
 	if indexReceived == -1 {
-		newRumor := Rumor{
+		newRumor := HybridRumor{
 			Id:      rumor.Id,
 			Origin:  rumor.Origin,
 			Message: rumor.Message,
 		}
-		o.ReceivedRumors = append(o.ReceivedRumors, newRumor)
+		o.ReceivedHybridRumors = append(o.ReceivedHybridRumors, newRumor)
 	}
-	o.storeRumorMux.Unlock()
+	o.storeHybridRumorMux.Unlock()
 	// Send RumorResponse back to the sender
 	auxMsg, err := io.Wrap(nil, &OverlayMsg{
-		RumorResponse: &RumorResponse{
+		HybridRumorResponse: &HybridRumorResponse{
 			RumorId:         rumor.Id,
 			RumorOrigin:     rumor.Origin,
 			ResponseNodeId:  o.ServerIdentity().ID,
-			ResponseMessage: o.ModifyRumorResponse(rumor.Message),
+			ResponseMessage: o.ModifyHybridRumorResponse(rumor.Message),
 		},
 	})
 	allSentLen, err = o.server.Send(si, auxMsg)
@@ -984,7 +984,7 @@ func (o *Overlay) handleRumor(si *network.ServerIdentity, size network.Size, rum
 	if len(rumor.LeafNodes) != 0 {
 		for _, childrenNodeID := range rumor.LeafNodes {
 			auxMsg, err := io.Wrap(nil, &OverlayMsg{
-				Rumor: &Rumor{
+				HybridRumor: &HybridRumor{
 					Id:      rumor.Id,
 					Origin:  rumor.Origin,
 					Message: rumor.Message,
@@ -1003,7 +1003,7 @@ func (o *Overlay) handleRumor(si *network.ServerIdentity, size network.Size, rum
 
 // Find the index of a rumor, given its origin and id
 func (o *Overlay) findIndexReceivedRumors(origin network.ServerIdentityID, id uint32) int {
-	for index, rumor := range o.ReceivedRumors {
+	for index, rumor := range o.ReceivedHybridRumors {
 		if rumor.Origin.ID.Equal(origin) && rumor.Id == id {
 			return index
 		}
@@ -1012,17 +1012,17 @@ func (o *Overlay) findIndexReceivedRumors(origin network.ServerIdentityID, id ui
 }
 
 // Receiving a rumor response from a peer
-func (o *Overlay) handleRumorResponse(si *network.ServerIdentity, size network.Size, rumorRes *RumorResponse, io MessageProxy) {
+func (o *Overlay) handleRumorResponse(si *network.ServerIdentity, size network.Size, rumorRes *HybridRumorResponse, io MessageProxy) {
 	o.server.Router.AddRx(uint64(size))
 	// If you are the root, store the acknowledgement
 	if o.ServerIdentity().ID.Equal(rumorRes.RumorOrigin.ID) {
-		o.storeRumorMux.Lock()
-		o.RumorsSent[(int(rumorRes.RumorId))].Acknowledgements[rumorRes.ResponseNodeId] = rumorRes.ResponseMessage
-		o.storeRumorMux.Unlock()
+		o.storeHybridRumorMux.Lock()
+		o.HybridRumorsSent[(int(rumorRes.RumorId))].Acknowledgements[rumorRes.ResponseNodeId] = rumorRes.ResponseMessage
+		o.storeHybridRumorMux.Unlock()
 	} else {
 		// If you are not the root, forward this acknowledgement to the origin
 		auxMsg, err := io.Wrap(nil, &OverlayMsg{
-			RumorResponse: rumorRes,
+			HybridRumorResponse: rumorRes,
 		})
 		sentLen, err := o.server.Send(&rumorRes.RumorOrigin, auxMsg)
 		if err != nil {
@@ -1075,10 +1075,10 @@ func (d *defaultProtoIO) Wrap(msg interface{}, info *OverlayMsg) (interface{}, e
 		returnMsg = info.RequestRoster
 	case info.Roster != nil:
 		returnMsg = info.Roster
-	case info.Rumor != nil:
-		returnMsg = info.Rumor
-	case info.RumorResponse != nil:
-		returnMsg = info.RumorResponse
+	case info.HybridRumor != nil:
+		returnMsg = info.HybridRumor
+	case info.HybridRumorResponse != nil:
+		returnMsg = info.HybridRumorResponse
 	default:
 		panic("overlay: default wrapper has nothing to wrap")
 	}
@@ -1115,10 +1115,10 @@ func (d *defaultProtoIO) Unwrap(msg interface{}) (interface{}, *OverlayMsg, erro
 		returnOverlay.RequestRoster = inner
 	case *Roster:
 		returnOverlay.Roster = inner
-	case *Rumor:
-		returnOverlay.Rumor = inner
-	case *RumorResponse:
-		returnOverlay.RumorResponse = inner
+	case *HybridRumor:
+		returnOverlay.HybridRumor = inner
+	case *HybridRumorResponse:
+		returnOverlay.HybridRumorResponse = inner
 	default:
 		err = xerrors.New("default protoIO: unwraping an unknown message type")
 	}
